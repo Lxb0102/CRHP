@@ -22,23 +22,6 @@ torch.manual_seed(1203)
 # torch.manual_seed(42)
 
 
-
-
-def remove_elements_by_percentage(lst, percentage):
-    if not lst:
-        return []
-
-    if percentage <= 0:
-        return lst.copy()
-
-    if percentage >= 100:
-        return []
-
-    num_elements_to_remove = int(len(lst) * (percentage / 100))
-    elements_to_remove = random.sample(lst, num_elements_to_remove)
-    result = [elem for elem in lst if elem not in elements_to_remove]
-    return result
-
 def get_n_params(model):
     pp=0
     for p in list(model.parameters()):
@@ -75,48 +58,18 @@ def main(temp=None):
     data_eval = data[split_point + eval_len:]
 
     matrics = dill.load(open(r'three_graph\matrics.pkl', 'rb'))
-    #
-    # dm_max_cov = matrics['cov_max'][0]#协方差最大者为1,其他地方为0
-    # pm_max_cov = matrics['cov_max'][1]
-    # mm_max_cov = matrics['cov_max'][2]
-    # dd_max_cov = matrics['cov_max'][3]
-    # pp_max_cov = matrics['cov_max'][4]
-    #
-    # dm_max_occur = matrics['occur_max'][0]#相互同现最大者为1,其他地方为0
-    # pm_max_occur = matrics['occur_max'][1]
-    # mm_max_occur = matrics['occur_max'][2]
-    # dd_max_occur = matrics['occur_max'][3]
-    # pp_max_occur = matrics['occur_max'][4]
-    #
-    # dm_attn_cov = matrics['rel_atten'][0]  # 协方差注意力,不太好解释
-    # pm_attn_cov = matrics['rel_atten'][1]
-    mm_attn_cov = matrics['rel_atten'][2]
-    # dd_attn_cov = matrics['rel_atten'][3]
-    # pp_attn_cov = matrics['rel_atten'][4]
-
-    # voc = dill.load(open(r'voc_final_4.pkl', 'rb'))
     ddi_matrix = dill.load(open(r'datas/ddi_A_final_{}.pkl'.format(mimic_ver),'rb'))
     ehr_matrix = dill.load(open('datas/ehr_adj_final_{}.pkl'.format(mimic_ver),'rb'))
     ehr_matrix = np.where(ehr_matrix>0,1,0)
     ehr_matrix = mm_attn_cov[1:,1:]
     #=========================================
     ddi_matrix = torch.tensor(ddi_matrix,device=device)
-    # ddi_matrix = torch.concat([torch.zeros_like(ddi_matrix[0]).unsqueeze(dim=-1),ddi_matrix],dim=-1)
-    # ddi_matrix = torch.concat([torch.zeros_like(ddi_matrix[0]).unsqueeze(dim=0),ddi_matrix],dim=0)
-    # return None
+    
     print(voc_size)
 
     train_loader = DataLoader(data_train, batch_size=1, collate_fn=pad_batch_v2_train, shuffle=True, pin_memory=False)
     eval_loader = DataLoader(data_eval, batch_size=1, collate_fn=pad_batch_v2_eval, shuffle=True, pin_memory=False)
     model = demo_net(emb_dim=64, voc_size=voc_size, device=device, ehr_adj=ehr_matrix,).to(device)
-    # for name, param in model.named_parameters():
-    #     print(f"Parameter {name} requires gradient: {param.requires_grad}")
-    # return None
-    # model.load_state_dict(torch.load(r'D:\PyCharm\projects\isbra\state_dict\iv\0662.pt'))
-    # for patient in list(eval_loader):
-    #     for med_batch in patient[2]:
-    #         for visit in med_batch:
-    #             print(visit)
     print('parameters', get_n_params(model))
     optimizer = Adam(model.parameters(), lr=0.0001)
     EPOCH = 50
@@ -126,9 +79,6 @@ def main(temp=None):
     # demo_loss_3 = InfoNCE()
     # demo_loss_4 = InfoNCE()
     demo_loss_3 = trd_loss()
-    # case_study(model,eval_loader,voc)
-
-    # f = open('D:\PyCharm\projects\isbra\试验记录\mimic-iv\鲁棒\iii\{}.txt'.format(temp), mode='w+')
     for epoch in range(EPOCH):
         ddi_rate = 0
         avg_precise = 0
@@ -190,11 +140,6 @@ def main(temp=None):
                 else:
                     gt_container[0] = 0
 
-
-                # for i in output[0]:
-                #     print(i.tolist())
-                # a = (output[0]-0.5)**5
-
                 loss_1 = demo_loss_1(output[0],gt_container)
 
                 # print(output.size())
@@ -216,9 +161,6 @@ def main(temp=None):
                          '-'*int(50-50*(index/len(train_loader)))+\
                          '|{:.2f}%|train_step:{}/{}'.format(100*(index/len(train_loader)),index,len(train_loader))
                         )
-
-            # print(model.female_block)
-            # print(model.male_block)
 
         print()
         model.eval()
