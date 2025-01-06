@@ -24,11 +24,6 @@ class demo_net(nn.Module):
         self.diag_emb = nn.Embedding(voc_size[0],emb_dim,padding_idx=0,device=device)
         self.proc_emb = nn.Embedding(voc_size[1],emb_dim,padding_idx=0,device=device)
         self.ehr_adj=torch.tensor(ehr_adj,device=self.device,dtype=torch.float)
-        # >>>
-        # self.diag_gcn =
-
-        # <<<
-
         self.dropout = nn.Dropout(p=0.2)
 
         self.diag_linear_1 = nn.Sequential(*[nn.Linear(emb_dim,emb_dim*2,device=device),
@@ -64,16 +59,6 @@ class demo_net(nn.Module):
 
         self.diag_med_block = nn.Parameter(torch.randn([self.emb_dim, voc_size[2] - 1], device=device))
         self.proc_med_block = nn.Parameter(torch.randn([self.emb_dim, voc_size[2] - 1], device=device))
-
-        # >>>
-
-        # self.seq_med_gcn = HGCN(self.med_dim, self.med_dim)
-        # self.vst_med_gcn = HGCN(self.med_dim, self.med_dim)
-        # self.seq_med_gcn = DGCN(self.med_dim, 0.1)
-        # self.vst_med_gcn = DGCN(self.med_dim, 0.1)
-        self.seq_med_gcn = HCCF()
-        self.vst_med_gcn = HCCF()
-        # <<<
 
         self.diag_encoder = nn.TransformerEncoderLayer(emb_dim, self.nhead, batch_first=True, dropout=0.2,device=device)
         self.proc_encoder = nn.TransformerEncoderLayer(emb_dim, self.nhead, batch_first=True, dropout=0.2,device=device)
@@ -116,37 +101,6 @@ class demo_net(nn.Module):
                                                nn.Linear((voc_size[2]-1)* 8, (voc_size[2]-1), device=device),
                                                nn.Tanh(),
                                                nn.Dropout(0.2)])
-
-    def history_gate_unit(self, patient_rep, all_vst_drug, contacter, his_fuser=None):
-
-        his_seq_mem = patient_rep[:-1]# 将患者表征序列最后一位去掉,然后在第一位填充0,相当于整体往后推一位vst
-        his_seq_mem = torch.cat([torch.zeros_like(patient_rep[0]).unsqueeze(dim=0), his_seq_mem], dim=0)
-
-        his_seq_container = torch.zeros([patient_rep.size()[0],
-                                         patient_rep.size()[0],
-                                         patient_rep.size()[1] * 2],
-                                        device=self.device)  # 生成二元历史信息交互对的容器,二元历史信息交互对共有vst*vst对
-
-        for i in range((len(patient_rep))):
-            for j in range((len(his_seq_mem))):
-                if j <= i:
-                    his_seq_container[i, j] = torch.concat([patient_rep[i],
-                                                            his_seq_mem[j]], dim=-1)  # 按照穷举法将vst两两配对拼接放入容器
-        his_seq_container = contacter(his_seq_container)  # 将拼接后的历史信息二元对经过一层MLP,生成该对vst对对应历史药物真实值的门控权重向量
-
-        # 生成mask,虽然for循环中已经有相当于mask的过程,
-        # 但是在后面的contacter网络的MLP结构中bias部分(也就是常数偏置项),会为container的"0"的部分重新赋值,导致非常离谱的性能,
-        # 因为能够直接接触到groundtruth,所以可以直接将性能提升到第一个epoch f1就到0.73的地步.
-        # 而去掉contacter中的bias之后对性能影响也非常之高,会将性能直接降低一个点,相当于his_unit基本起不了作用.
-        # 所以for循环中判断语句<j <= i>仅仅是为了减少神经网络的计算量,而mask的过程需要另设结构,
-        # 发现这一问题我们花费了一个晚上加上一整天的代价.
-        his_seq_filter_mask = torch.tril(torch.ones([patient_rep.size()[0],
-                                                     patient_rep.size()[0]], device=self.device)).unsqueeze(dim=-1)
-
-        his_seq_enhance = his_seq_filter_mask * his_seq_container * all_vst_drug  # 利用门控向量为历史药物分配权重
-        his_seq_enhance = his_seq_enhance.sum(dim=1)  # 然后将对应同一个vst的历史药物直接加和
-
-        return his_seq_enhance.reshape(-1, self.voc_size[2] - 1)
 
     def encoder(self,diag_seq,proc_seq,diag_mask=None,proc_mask=None):
         max_diag_num = diag_seq.size()[-1]
@@ -219,20 +173,14 @@ class demo_net(nn.Module):
         DPI_prob = patient_rep_simple@seq_med[0].T
         final_prob_1 = patient_rep@seq_med[0].T
         final_prob_2 = vst_patient@vst_med[0].T
-
-        # final_prob_1 = patient_rep @ self.seq_med
-        # final_prob_2 = vst_patient @ self.vst_med
-
         diag_probseq = diag @ self.diag_med_block
         proc_probseq = proc @ self.proc_med_block
-
         # +++++++++++++++++++++++++++++++++++++++++++++++++++++
         diag_prob_1, diag_prob_2 = self.diag_prob_integ(diag_probseq)
         diag_prob = (diag_prob_1+diag_prob_2).reshape(-1,self.voc_size[2]-1)
 
         proc_prob_1, proc_prob_2 = self.proc_prob_integ(proc_probseq)
         proc_prob = (proc_prob_1 + proc_prob_2).reshape(-1,self.voc_size[2]-1)
-
         final_prob_3 = diag_prob + proc_prob
 
         prob_seq_rep = torch.concat([diag_prob, proc_prob], dim=-1)
@@ -241,10 +189,9 @@ class demo_net(nn.Module):
         # 去除DPI
         # prob = final_prob_1 + his_enhance + final_prob_2 + 1.2*vst_his_enhance + final_prob_3 #+ prob_seq_enhance
         prob = DPI_prob
-        # prob = final_prob_3 + prob_seq_enhance
+       
         prob = prob.reshape(-1,self.voc_size[2]-1)
-        # print(gender[0][0])
-        # prob = prob@self.gender_block*(1-gender[0][0]) + prob*gender[0][0]
+        
         prob = F.sigmoid(prob)
 
         # prob_patient_integ_out = (final_prob_1 + his_enhance).reshape(-1, self.voc_size[2] - 1)
