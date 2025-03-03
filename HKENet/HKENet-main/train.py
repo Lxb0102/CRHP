@@ -71,7 +71,7 @@ def main(temp=None):
     eval_loader = DataLoader(data_eval, batch_size=1, collate_fn=pad_batch_v2_eval, shuffle=True, pin_memory=False)
     model = demo_net(emb_dim=64, voc_size=voc_size, device=device, ehr_adj=ehr_matrix,).to(device)
     print('parameters', get_n_params(model))
-    optimizer = Adam(model.parameters(), weight_decay=0.01, lr=0.0001)
+    optimizer = Adam(model.parameters(), weight_decay=0.001, lr=0.0001)
     EPOCH = 50
     demo_loss_1 = nn.BCELoss()
     # demo_loss_1 = FocalLoss()
