@@ -1,4 +1,4 @@
-# HKENet
+# CRHP
 **This is the data and code for our paper** `Collaborative Relation Augmentation with Hierarchical Prescription Inference for Medication Recommendation`.
 
 ## Prerequisites
